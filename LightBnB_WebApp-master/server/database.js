@@ -19,7 +19,6 @@ const pool = new Pool({
 
 const getUserWithEmail = email => {
   const queryStr = "SELECT * FROM users WHERE email = $1";
-
   return pool
     .query(queryStr, [email])
     .then(res => res.rows[0])
@@ -36,7 +35,6 @@ exports.getUserWithEmail = getUserWithEmail;
 
 const getUserWithId = id => {
   const queryStr = "SELECT * FROM users WHERE id = $1";
-
   return pool
     .query(queryStr, [id])
     .then(res => res.rows[0])
@@ -49,26 +47,13 @@ exports.getUserWithId = getUserWithId;
  * @param {{name: string, password: string, email: string}} user
  * @return {Promise<{}>} A promise to the user.
  */
-// const addUser =  function(user) {
-//   const userId = Object.keys(users).length + 1;
-//   user.id = userId;
-//   users[userId] = user;
-//   return Promise.resolve(user);
-// }
-
-const addUser = user => {
-  const queryStr = `
-    INSERT INTO users (name, email, password)
-    VALUES ($1, $2, $3) RETURNING *
-  `;
-  const values = [user.name, user.email, user.password];
-
-  return pool
-    .query(queryStr, values)
-    .then(res => user)
-    .catch(err => err);
+const addUser = function(user) {
+  const values = [user.name, user.password, user.email];
+  const queryString = `
+  INSERT INTO users (name, password, email) VALUES ($1, $2, $3);`;
+  pool.query(queryString, values); // should i handle failiure?
+  return getUserWithEmail(user);
 };
-
 exports.addUser = addUser;
 
 /// Reservations
@@ -88,13 +73,11 @@ const getAllReservations = (guest_id, limit = 10) => {
     LIMIT $2
   `;
   const values = [guest_id, limit];
-
   return pool
     .query(queryStr, values)
     .then(res => res.rows)
     .catch(err => err);
 };
-
 exports.getAllReservations = getAllReservations;
 
 /// Properties
@@ -105,80 +88,20 @@ exports.getAllReservations = getAllReservations;
  * @param {*} limit The number of results to return.
  * @return {Promise<[{}]>}  A promise to the properties.
  */
-
-const getAllProperties = (options, limit = 10) => {
-  const queryParams = [];
-
-  let queryStr = `
-    SELECT properties.*, avg(rating) AS average_rating 
-    FROM properties
-    JOIN property_reviews
-    ON properties.id = property_id
-  `;
-
-  //FILTERS IF MULTIPLE FILTERS, NEED [MORE ANDS ON WHERE]
-  if (options.city) {
-    queryParams.push(`%${options.city}%`);
-    queryStr += `
-      WHERE city LIKE $${queryParams.length}
-    `;
-  }
-
-  //NEED TO ADD ID
-  if (options.id) {
-    queryParams.push(options.id);
-    if (!queryParams.length) {
-      queryStr += `
-        WHERE id = $${queryParams.length}
-      `;
-    } else {
-      queryStr += `
-        AND id = $${queryParams.length}
-      `;
-    }
-  }
-
-  //ADJUST FROM CENTS TO DEFAULT DOLLARS ON SEARCH
-  if (options.minimum_price_per_night && options.maximum_price_per_night) {
-    queryParams.push(options.minimum_price_per_night * 100);
-    queryParams.push(options.maximum_price_per_night * 100);
-    if (!queryParams.length) {
-      queryStr += `
-        WHERE cost_per_night >= $${queryParams.length - 1}
-        AND cost_per_night <= $${queryParams.length}
-      `;
-    } else {
-      queryStr += `
-        AND cost_per_night >= $${queryParams.length - 1}
-        AND cost_per_night <= $${queryParams.length}
-      `;
-    }
-  }
-
-  queryParams.push(limit);
-
-  //IF MIN RATING SET CHECK
-  if (options.minimum_rating) {
-    queryParams.push(options.minimum_rating);
-    queryStr += `
-      GROUP BY properties.id
-      HAVING avg(rating) >= $${queryParams.length}
-      ORDER BY cost_per_night
-      LIMIT $${queryParams.length - 1};
-    `;
-  } else {
-    queryStr += `
-      GROUP BY properties.id
-      ORDER BY cost_per_night
-      LIMIT $${queryParams.length};
-    `;
-  }
-
-  console.log(queryStr, queryParams);
-
-  return pool.query(queryStr, queryParams).then(res => res.rows);
+const getAllProperties = function(options, limit = 10) {
+  return pool
+    .query(
+      `
+  SELECT properties.*, avg(property_reviews.rating) as average_rating
+  FROM properties
+  join property_reviews on properties.id = property_reviews.property_id
+  group by properties.id 
+  LIMIT $1
+  `,
+      [limit]
+    )
+    .then(res => res.rows);
 };
-
 exports.getAllProperties = getAllProperties;
 
 /**
